@@ -1,0 +1,11 @@
+#HAI
+#MAEK HEAD
+#GIMMEH TITLE Bold Test #OIC
+#MKAY
+#MAEK PARAGRAF
+This is some awesome text
+#GIMMEH BOLD
+THIS IS COOLER Text
+#OIC
+#MKAY
+#KBYE

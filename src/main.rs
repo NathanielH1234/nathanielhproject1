@@ -1,8 +1,10 @@
-use std::env; //test comment 1
+use std::env; 
 use std::fs;
 use std::process::Command;
 
 pub trait Compiler {
+    //these are the main functions that the compiler needs to have
+
     fn compile(&mut self, source: &str);
     fn next_token(&mut self) -> String;
     fn parse(&mut self);
@@ -11,12 +13,16 @@ pub trait Compiler {
 }
 
 pub trait LexicalAnalyzer {
+    //this trait is where I deal with first section of compiling the LA. This is where the input is read
+    // and separated into tokens so the compiler csan work with it
     fn get_char(&mut self) -> char;
     fn add_char(&mut self, c: char);
     fn lookup(&self, s: &str) -> bool;
 }
 
 pub trait SyntaxAnalyzer {
+    //these functions determine whether the tokens are being used in the right order. 
+
     fn parse_lolcode(&mut self);
     fn parse_head(&mut self);
     fn parse_title(&mut self);
@@ -36,6 +42,9 @@ pub trait SyntaxAnalyzer {
     fn parse_text(&mut self);
 }
 
+
+
+
 pub struct SimpleLexicalAnalyzer {
     input: Vec<char>,
     position: usize,
@@ -49,6 +58,9 @@ pub struct SimpleLexicalAnalyzer {
 }
 
 impl SimpleLexicalAnalyzer {
+
+    //converts the source into characters so we can read them one at a time.
+
     pub fn new(source: &str) -> Self {
         Self {
             input: source.chars().collect(),
@@ -73,6 +85,8 @@ impl SimpleLexicalAnalyzer {
     fn peek_char(&self) -> char {
         if self.position < self.input.len() { self.input[self.position] } else { '\0' }
     }
+
+
 
     fn lexical_error(&self, line: usize, msg: &str) {
         eprintln!("Lexical error on line {}: {}", line, msg);
