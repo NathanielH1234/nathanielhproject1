@@ -23,6 +23,7 @@ pub trait LexicalAnalyzer {
 pub trait SyntaxAnalyzer {
     //these functions determine whether the tokens are being used in the right order. 
 
+    //I have one function fior each rule that is in the grammar
     fn parse_lolcode(&mut self);
     fn parse_head(&mut self);
     fn parse_title(&mut self);
@@ -45,6 +46,9 @@ pub trait SyntaxAnalyzer {
 
 
 
+
+
+//This stores the input, and keeps track of where I am reading what and saves the tokens and the keywords
 pub struct SimpleLexicalAnalyzer {
     input: Vec<char>,
     position: usize,
@@ -59,7 +63,7 @@ pub struct SimpleLexicalAnalyzer {
 
 impl SimpleLexicalAnalyzer {
 
-    //converts the source into characters so we can read them one at a time.
+    //this converts the source into characters so we can read them one at a time.
 
     pub fn new(source: &str) -> Self {
         Self {
@@ -71,28 +75,37 @@ impl SimpleLexicalAnalyzer {
             tokens: Vec::new(),
             token_lines: Vec::new(),
             annotations: vec![
+
+                //This is where I store all the possible #keywords
                 "#HAI".into(), "#KBYE".into(), "#OBTW".into(), "#TLDR".into(),
                 "#MAEK".into(), "#OIC".into(), "#GIMMEH".into(), "#MKAY".into(),
                 "#NEWLINE".into(), "#IHAZ".into(), "#ITIZ".into(),
             ],
             keywords: vec![
+
+                //These are my keywards I can use after annotations
                 "HEAD".into(), "TITLE".into(), "PARAGRAF".into(), "BOLD".into(),
                 "LIST".into(), "ITEM".into(), "LINX".into(), "VAR".into(),
             ],
         }
     }
 
+
+    //This checks the character at the current position but doesnt move forward
     fn peek_char(&self) -> char {
         if self.position < self.input.len() { self.input[self.position] } else { '\0' }
     }
 
 
 
+    //This just displays a lexical error that shows the line number and message to help user know what they did wrong
     fn lexical_error(&self, line: usize, msg: &str) {
         eprintln!("Lexical error on line {}: {}", line, msg);
         std::process::exit(1);
     }
 
+
+    //this takes the text I have built so far and removes any extra weird spaces and saves it as a token but only if the token isnt empty
     fn flush_text(&mut self) {
         let text = std::mem::take(&mut self.current_build);
         let trimmed = text.trim();
@@ -102,6 +115,7 @@ impl SimpleLexicalAnalyzer {
         }
     }
 
+    //This reads the actual annotation starting with the #, checks if it is recognised and if it is it will save it as a token
     fn read_annotation(&mut self) {
         let line = self.line;
         self.add_char('#');
@@ -120,6 +134,8 @@ impl SimpleLexicalAnalyzer {
         }
     }
 
+
+    //This reads the keyward that is after the annotation and checks if it is recognised thjen it will save it as a token if so
     fn read_keyword(&mut self, after: &str) {
         while self.peek_char().is_whitespace() {
             self.get_char();
@@ -140,10 +156,14 @@ impl SimpleLexicalAnalyzer {
         if !self.lookup(&word) {
             self.lexical_error(line, &format!("'{}' is not a recognized keyword after {}.", word, after));
         }
+
+        //This pushes the recognised keyword into the tokens and saves its line number in token_lines
         self.tokens.push(word);
         self.token_lines.push(line);
     }
 
+
+    //This goes through the input character by character at a time, separates the annotations from the normal text and saves everything as tokens
     pub fn tokenize(&mut self) {
         loop {
             let c = self.get_char();
@@ -163,6 +183,8 @@ impl SimpleLexicalAnalyzer {
     }
 }
 
+
+//This gets the character at the current position, moves to the next character and keeps track of the line number
 impl LexicalAnalyzer for SimpleLexicalAnalyzer {
     fn get_char(&mut self) -> char {
         if self.position < self.input.len() {
@@ -177,6 +199,7 @@ impl LexicalAnalyzer for SimpleLexicalAnalyzer {
         }
     }
 
+    //this adds a character to the lexeme I am building and if its the first real charactrer it will save the line number so errors an be found.
     fn add_char(&mut self, c: char) {
         if self.current_build.trim().is_empty() && !c.is_whitespace() {
             self.build_line = self.line;
@@ -184,17 +207,23 @@ impl LexicalAnalyzer for SimpleLexicalAnalyzer {
         self.current_build.push(c);
     }
 
+    //This checks if a word is a real annotation or keyword
     fn lookup(&self, s: &str) -> bool {
+
+        //with the uppercase function if someone wants to put in a uppercase first it doesn't matter
         let up = s.to_uppercase();
         self.annotations.iter().any(|a| *a == up) || self.keywords.iter().any(|k| *k == up)
     }
 }
 
+
+//helper function that adds a line of html to the output and puts a new line after so I don't have to keep typing push_str and new line every time.
 fn emit(out: &mut String, s: &str) {
     out.push_str(s);
     out.push('\n');
 }
 
+//This looks up the value of a variable by its name, this is my static semantic check before using a variable that was not defined
 fn resolve(vars: &Vec<(String, String)>, name: &str, line: usize) -> String {
     let mut k = vars.len();
     while k > 0 {
@@ -207,15 +236,20 @@ fn resolve(vars: &Vec<(String, String)>, name: &str, line: usize) -> String {
     std::process::exit(1);
 }
 
+
+//This is my main compiler, it holds the lexer, the token I am currently looking at and holds the line number
+
 pub struct LolCompiler {
     lexer: SimpleLexicalAnalyzer,
     current_tok: String,
     current_line: usize,
+    //The record and record lines save each token the parser accepted in the order it was accepted in so the translate function can use them later on the line
     record: Vec<String>,
     record_lines: Vec<usize>,
 }
 
 impl LolCompiler {
+    //This actually makes a new compiler with every single empty lexer, the real lexer gets made later on in the compile process when I have the sourcwe 
     pub fn new() -> Self {
         Self {
             lexer: SimpleLexicalAnalyzer::new(""),
@@ -225,7 +259,9 @@ impl LolCompiler {
             record_lines: Vec::new(),
         }
     }
-
+    
+    //This looks at the token after the current one without using it up
+    //main reason I need this is because some annotations like #MAEK can start different things so I gotta see if the next word is paragraf or LIST because I know what rule to use
     fn peek_token(&self) -> String {
         let n = self.lexer.tokens.len();
         if n == 0 {
@@ -235,10 +271,13 @@ impl LolCompiler {
         }
     }
 
+
+    //This checks if the current token is plain text, which is just anything that is not empty and doesnt have the # symbol
     fn is_text(&self) -> bool {
         !self.current_tok.is_empty() && !self.current_tok.starts_with('#')
     }
 
+    //This is just a niceity, that makes the current token look really nice for the errror messages and if there is no token left it will let you know its end of the file
     fn found(&self) -> String {
         if self.current_tok.is_empty() {
             "end of file".to_string()
@@ -246,22 +285,23 @@ impl LolCompiler {
             format!("'{}'", self.current_tok)
         }
     }
-
+//This displays a syntax error with the line number and then immediately stops the program since there is no point in using bad structure
     fn syntax_error(&self, msg: &str) {
         eprintln!("Syntax error on line {}: {}", self.current_line, msg);
         std::process::exit(1);
     }
-
+//This is a shortcut for the error when a token is in a spot it shouldn't be, so it lets you know where
     fn unexpected(&self, context: &str) {
         self.syntax_error(&format!("unexpected {} inside {}.", self.found(), context));
     }
-
+//this actually accepts the current token by saving it inside of record and with its line number and moves on to the next token
     fn consume(&mut self) {
         self.record.push(self.current_tok.clone());
         self.record_lines.push(self.current_line);
         self.next_token();
     }
 
+    //this ensures the current token the one I need , if it is I consume if not I give a syntax error
     fn expect(&mut self, expected: &str) {
         if self.current_tok == expected {
             self.consume();
@@ -270,6 +310,7 @@ impl LolCompiler {
         }
     }
 
+    
     fn expect_word(&mut self, what: &str) {
         if !self.is_text() {
             self.syntax_error(&format!("{} was expected but {} was found.", what, self.found()));
@@ -280,12 +321,16 @@ impl LolCompiler {
         self.consume();
     }
 
+    //There are the things that can show up in the body, a paragraph or a list item
+    //so I put them all in one function so I dont have to write the same if else chain 3 times. It returns true if something is found and false if not
     fn parse_simple_item(&mut self) -> bool {
         if self.current_tok == "#OBTW" {
             self.parse_comment();
         } else if self.current_tok == "#NEWLINE" {
             self.parse_newline();
         } else if self.current_tok == "#GIMMEH" {
+
+            //#GIMMEH is used for a bunch of different things so I peak at the keyword to know which rule I should actually follow
             let next = self.peek_token();
             if next == "BOLD" {
                 self.parse_bold();
@@ -303,16 +348,20 @@ impl LolCompiler {
         }
         true
     }
-
+//This is the section that actually turns the tokens into html. It runs after the parser is finished so I already know the tokens are in a clean valid order.
+//which is why I can use fixed jumps like i+=5 without being concerned about accidentally going out of bounds
     pub fn translate(&mut self) -> String {
         let rec = self.record.clone();
         let lines = self.record_lines.clone();
         let mut out = String::new();
         let mut vars: Vec<(String, String)> = Vec::new();
+        //var stores the name, value of every variable, and marks rememebers how many variables existed
         let mut marks: Vec<usize> = Vec::new();
         let mut closers: Vec<String> = Vec::new();
+        //the closers store the closing html tags I still have to write 
         let mut i = 0;
 
+        
         while i < rec.len() {
             let tok = rec[i].clone();
             if tok == "#HAI" {
@@ -322,9 +371,12 @@ impl LolCompiler {
                 emit(&mut out, "</html>");
                 i += 1;
             } else if tok == "#OBTW" {
+
+                //a comment is 3 tokens (#OBTW,text,#TLDR) so I use the middle one and skip ahead 3
                 emit(&mut out, &format!("<!-- {} -->", rec[i + 1]));
                 i += 3;
             } else if tok == "#MAEK" {
+                //MAEK opens a head, paragraph or list so I pick the right html tags for whenever one it is
                 let kind = rec[i + 1].clone();
                 let open;
                 let close;
@@ -338,6 +390,8 @@ impl LolCompiler {
                     open = "<ul>";
                     close = "</ul>";
                 }
+
+                //I save the closing tag for later and remember how many variabels there are right now so I can delete the ones made inside this block when it ends
                 emit(&mut out, open);
                 closers.push(close.to_string());
                 marks.push(vars.len());
@@ -345,14 +399,18 @@ impl LolCompiler {
             } else if tok == "#GIMMEH" {
                 let kind = rec[i + 1].clone();
                 if kind == "TITLE" {
+                    //GIMMEH title text #OIC is 4 tokens
                     emit(&mut out, &format!("<title> {} </title>", rec[i + 2]));
                     i += 4;
                 } else if kind == "BOLD" {
+                    //bold can have lots of text pieces and variabkles in it so I loop until I hit the #OIC tag and put everything together wit the spaces
                     i += 2;
                     let mut text = String::new();
                     while rec[i] != "#OIC" {
                         if !text.is_empty() {
                             text.push(' ');
+
+                            //if its a #GIMMEH then its a variable use so I swap it for the value of the variable
                         }
                         if rec[i] == "#GIMMEH" {
                             text.push_str(&resolve(&vars, &rec[i + 2], lines[i + 2]));
@@ -365,26 +423,35 @@ impl LolCompiler {
                     i += 1;
                     emit(&mut out, &format!("<b> {} </b>", text));
                 } else if kind == "ITEM" {
+
+                    //a list item stays open until its #OIC so it works the same as #MAEK with the closers and marks 
                     emit(&mut out, "<li>");
                     closers.push("</li>".to_string());
                     marks.push(vars.len());
                     i += 2;
                 } else if kind == "LINX" {
+                    //I use the address for both the href and the text you can click on if the thing doesnt open automatically
                     let addr = rec[i + 2].clone();
                     emit(&mut out, &format!("<a href=\"{}\">{}</a>", addr, addr));
                     i += 4;
                 } else {
+
+                    //the only one left is VAR so this is just using the variable 
                     let value = resolve(&vars, &rec[i + 2], lines[i + 2]);
                     emit(&mut out, &value);
                     i += 4;
                 }
             } else if tok == "#IHAZ" {
+
+                //#IHAZ name #ITIZ value #MKAY is 5 tokens, this only saves the variable and doesn't write anything to the html
                 vars.push((rec[i + 1].clone(), rec[i + 3].clone()));
                 i += 5;
             } else if tok == "#NEWLINE" {
                 emit(&mut out, "<br>");
                 i += 1;
             } else if tok == "#MKAY" || tok == "#OIC" {
+
+                //this is the end of a block so I write the closing tag that was saved last and delete any variables that were made inside of it
                 let close = closers.pop().unwrap_or_default();
                 let mark = marks.pop().unwrap_or_default();
                 while vars.len() > mark {
@@ -393,6 +460,7 @@ impl LolCompiler {
                 emit(&mut out, &close);
                 i += 1;
             } else {
+                //anything else left is just normal text so I then copy it straight into the output 
                 emit(&mut out, &tok);
                 i += 1;
             }
@@ -402,6 +470,8 @@ impl LolCompiler {
 }
 
 impl Compiler for LolCompiler {
+
+    //This makes a new lexer with the source, and runs to tokenize on it to gewt all the tokens and then loads the first token so it is ready for the parserr 
     fn compile(&mut self, source: &str) {
         self.lexer = SimpleLexicalAnalyzer::new(source);
         self.lexer.tokenize();
@@ -409,6 +479,9 @@ impl Compiler for LolCompiler {
         self.record_lines.clear();
         self.next_token();
     }
+
+    //This takes the next token from the back of the list and makes it the current token
+    //if there are no tokens left it returns an empty string to show that it is the end of file 
 
     fn next_token(&mut self) -> String {
         let tok = self.lexer.tokens.pop().unwrap_or_default();
@@ -430,6 +503,8 @@ impl Compiler for LolCompiler {
     }
 }
 
+
+//this is the top rule so it checks the whole program is in the right order and nothing can come after the #KBYE symbol thing
 impl SyntaxAnalyzer for LolCompiler {
     fn parse_lolcode(&mut self) {
         self.expect("#HAI");
@@ -599,6 +674,9 @@ impl SyntaxAnalyzer for LolCompiler {
     }
 }
 
+
+//I take in the filepath as a string input and use it to open  the generated HTML file in the web browser. 
+//But if it fails I display a message for the user to open it manually
 fn open_in_browser(path: &str) {
     let result = if cfg!(target_os = "windows") {
         Command::new("cmd").args(["/C", "start", "", path]).status()
@@ -611,7 +689,10 @@ fn open_in_browser(path: &str) {
 }
 
 fn main() {
+
     let args: Vec<String> = env::args().collect();
+
+    //I need 2 arguments the program and the lol file so if the len is anymore then 2 or any less than 2 I have to pop an error
     if args.len() != 2 {
         eprintln!("Usage error: expected exactly one argument.\nUsage: {} <input_file.lol>", args[0]);
         std::process::exit(1);
@@ -623,16 +704,22 @@ fn main() {
         std::process::exit(1);
     }
 
+
+    //make sure that the source is 100 percent a .lol file and I made it lowerercased so if someone puts in .LOL it will still work thru the llowercasse function
     let source = fs::read_to_string(filename).unwrap_or_else(|err| {
         eprintln!("Error reading file '{}': {}", filename, err);
         std::process::exit(1);
     });
 
+
+    //here I made the compiler that loads the first token then it parses thru the syntax check then it starts the translation into the html
     let mut compiler = LolCompiler::new();
     compiler.compile(&source);
     compiler.parse();
     let html = compiler.translate();
 
+
+    //here I swap ".lol" for ".html" by chopping off the last 4 chars
     let output_name = format!("{}.html", &filename[..filename.len() - 4]);
     fs::write(&output_name, html).unwrap_or_else(|err| {
         eprintln!("Error writing file '{}': {}", output_name, err);
