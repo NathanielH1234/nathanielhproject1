@@ -503,14 +503,13 @@ impl Compiler for LolCompiler {
     }
 }
 
-
+//the rule used was <lolcode> ::= HAI <comments> <head> <optional-variable-define> <body> KBYE
 //this is the top rule so it checks the whole program is in the right order and nothing can come after the #KBYE symbol thing
+
 impl SyntaxAnalyzer for LolCompiler {
     fn parse_lolcode(&mut self) {
         self.expect("#HAI");
-        while self.current_tok == "#OBTW" {
-            self.parse_comment();
-        }
+        self.parse_comments();
         self.parse_head();
         if self.current_tok == "#IHAZ" {
             self.parse_variable_define();
@@ -522,6 +521,8 @@ impl SyntaxAnalyzer for LolCompiler {
         }
     }
 
+   // <head> ::= MAEK HEAD <title> MKAY |  ε
+   //The head is optional so I only parse it if I see #MAEK followed by the head, I have to peak because #MAEK could also possible be the start of a paragraph or a list
     fn parse_head(&mut self) {
         if self.current_tok == "#MAEK" && self.peek_token() == "HEAD" {
             self.expect("#MAEK");
@@ -531,36 +532,36 @@ impl SyntaxAnalyzer for LolCompiler {
         }
     }
 
+
+//<title> ::= GIMMEH TITLE TEXT OIC 
+
+//this follows the title rule by checking for #GIMMEH TITLE, then reading the title text and making sure it ends with #OIC
     fn parse_title(&mut self) {
         self.expect("#GIMMEH");
         self.expect("TITLE");
         self.parse_text();
         self.expect("#OIC");
     }
+//<comment> ::= OBTW TEXT TLDR
 
+  //This checks that a comment starts with #OBTW, has same text inside it and finishes with #TLDR
     fn parse_comment(&mut self) {
         self.expect("#OBTW");
         self.parse_text();
         self.expect("#TLDR");
     }
 
+//<body> ::= <inner-body> <body>  | ε 
+//here I parse one inner body and then call itself again and it stops when it reaches the #KBYE symbol
     fn parse_body(&mut self) {
-        while self.current_tok != "#KBYE" {
-            if self.current_tok == "#MAEK" {
-                let next = self.peek_token();
-                if next == "PARAGRAF" {
-                    self.parse_paragraph();
-                } else if next == "LIST" {
-                    self.parse_list();
-                } else {
-                    self.unexpected("the document body");
-                }
-            } else if !self.parse_simple_item() {
-                self.unexpected("the document body");
-            }
+        if self.current_tok != "#KBYE" {
+            self.parse_inner_body();
+            self.parse_body();
         }
     }
 
+    //<paragraph> ::= MAEK PARAGRAF <optional-variable-define> <inner-paragraph> MKAY
+ //This checks that a paragraph starts with #MAEK PARAGRAF, and checks if there is a variable definiton  before reading the paragraph contents. It then finishes when it reaches the #MKAY
     fn parse_paragraph(&mut self) {
         self.expect("#MAEK");
         self.expect("PARAGRAF");
@@ -571,12 +572,18 @@ impl SyntaxAnalyzer for LolCompiler {
         self.expect("#MKAY");
     }
 
+    //<inner-paragraph> ::= <inner-text> <inner-paragraph> | ε
+    //this parses one inner text and calls itself again until it reaches the  #MKAY
     fn parse_inner_paragraph(&mut self) {
-        while self.current_tok != "#MKAY" {
+        if self.current_tok != "#MKAY" {
             self.parse_inner_text();
+            self.parse_inner_paragraph();
         }
     }
 
+    //this checks what type of content is insdie the paragraph
+    //if it sees #MAEK it checks whether the nexdst keyword is a LIST so it knows how to parse a list
+    //otherwise it just uses parse_simple_item
     fn parse_inner_text(&mut self) {
         if self.current_tok == "#MAEK" {
             if self.peek_token() == "LIST" {
@@ -588,6 +595,7 @@ impl SyntaxAnalyzer for LolCompiler {
             self.unexpected("a paragraph");
         }
     }
+//This just checks that a variable has the correct structuree starting with the #IHAZ and followed by its name then #ITIZ and its value before finishing with the #MKAY closing
 
     fn parse_variable_define(&mut self) {
         self.expect("#IHAZ");
@@ -596,7 +604,7 @@ impl SyntaxAnalyzer for LolCompiler {
         self.parse_text();
         self.expect("#MKAY");
     }
-
+    //This checks that a variable is being used correctly by looking for #GIMMEH VAR, then checking that a variable name is provided and that it actually finishes with #OIC
     fn parse_variable_use(&mut self) {
         self.expect("#GIMMEH");
         self.expect("VAR");
@@ -604,6 +612,8 @@ impl SyntaxAnalyzer for LolCompiler {
         self.expect("#OIC");
     }
 
+
+   //This checks that the bold annotation starts with the needed #GIMMEH BOLD and then reads all the text  inside it until it reaches the #OIC.
     fn parse_bold(&mut self) {
         self.expect("#GIMMEH");
         self.expect("BOLD");
@@ -622,38 +632,38 @@ impl SyntaxAnalyzer for LolCompiler {
         self.expect("#OIC");
     }
 
+    //<list> ::= MAEK LIST <list-item> <list-items> MKAY
+    //This checks that a list starts with the needed #MAEK LIST, then makes sure there is atleast one list item
+    //It also checks for any extra list items before finishin it all up with the #MKAY
     fn parse_list(&mut self) {
         self.expect("#MAEK");
         self.expect("LIST");
+        self.parse_list_item();
         self.parse_list_items();
         self.expect("#MKAY");
     }
 
+    //<list-items> ::= <list-item> <list-items> | ε
+    //if another #GIMMEH ITEM is next I parse that item and call myself again, otherwise I stop
     fn parse_list_items(&mut self) {
-        let mut count = 0;
-        while self.current_tok == "#GIMMEH" && self.peek_token() == "ITEM" {
-            self.expect("#GIMMEH");
-            self.expect("ITEM");
-            if self.current_tok == "#IHAZ" {
-                self.parse_variable_define();
-            }
-            self.parse_inner_list();
-            self.expect("#OIC");
-            count += 1;
-        }
-        if count == 0 {
-            self.syntax_error(&format!("a list must start with #GIMMEH ITEM but {} was found.", self.found()));
+        if self.current_tok == "#GIMMEH" && self.peek_token() == "ITEM" {
+            self.parse_list_item();
+            self.parse_list_items();
         }
     }
 
+    //<inner-list> ::= <list-content> <inner-list> | ε
+    //parses one piece of list content and calls itself again until it reaches #OIC
     fn parse_inner_list(&mut self) {
-        while self.current_tok != "#OIC" {
+        if self.current_tok != "#OIC" {
             if !self.parse_simple_item() {
                 self.unexpected("a list item");
             }
+            self.parse_inner_list();
         }
     }
 
+    //This just checks that a link starts with #GIMMEH LINX and a link address is provided then closed off with #OIC
     fn parse_link(&mut self) {
         self.expect("#GIMMEH");
         self.expect("LINX");
@@ -661,16 +671,62 @@ impl SyntaxAnalyzer for LolCompiler {
         self.expect("#OIC");
     }
 
+    //This just checks that the current token is #NEWLINE and then it will move up to the next token 
     fn parse_newline(&mut self) {
         self.expect("#NEWLINE");
     }
-
+//This checks that the token that is current is normal text and not an annotation or not the end of the file 
     fn parse_text(&mut self) {
         if self.is_text() {
             self.consume();
         } else {
             self.syntax_error(&format!("plain text was expected but {} was found.", self.found()));
         }
+    }
+}
+
+//these are the extra grammar rules that the SyntaxAnalyzer trait doesn't list, so they have to go in a normal impl and not the trait impl
+impl LolCompiler {
+    //<comments> ::= <comment> <comments> | ε
+    //this parses a comment and then calls itself again as long as another #OBTW is next
+    fn parse_comments(&mut self) {
+        if self.current_tok == "#OBTW" {
+            self.parse_comment();
+            self.parse_comments();
+        }
+    }
+
+    //<inner-body> ::= <paragraph> | <comment> | <bold> | <list> | <link> | <newline> | <variable-use> | TEXT
+    //#MAEK starts a paragraph or a list so I peek, and everything else is handled by the parse_simple_item
+    fn parse_inner_body(&mut self) {
+        if self.current_tok == "#MAEK" {
+            let next = self.peek_token();
+            if next == "PARAGRAF" {
+                self.parse_paragraph();
+            } else if next == "LIST" {
+                self.parse_list();
+            } else {
+                self.unexpected("the document body");
+            }
+        } else if !self.parse_simple_item() {
+            self.unexpected("the document body");
+        }
+    }
+
+    //<list-item> ::= GIMMEH ITEM <optional-variable-define> <inner-list> OIC
+    //This checks that a list item starts with #GIMMEH ITEM. It then checks if there is a variable definiton
+    //Then it reads the contents of the list item and make sure it actually finsiehs with #OIC
+    fn parse_list_item(&mut self) {
+        if !(self.current_tok == "#GIMMEH" && self.peek_token() == "ITEM") {
+            self.syntax_error(&format!("a list must start with #GIMMEH ITEM but {} was found.", self.found()));
+        }
+        self.expect("#GIMMEH");
+        self.expect("ITEM");
+        if self.current_tok == "#IHAZ" {
+            self.parse_variable_define();
+        }
+        self.parse_inner_list();
+        self.expect("#OIC");
     }
 }
 
@@ -698,6 +754,7 @@ fn main() {
         std::process::exit(1);
     }
 
+    //make sure that the source is 100 percent a .lol file and I made it lowerercased so if someone puts in .LOL it will still work thru the llowercasse function
     let filename = &args[1];
     if !filename.to_lowercase().ends_with(".lol") {
         eprintln!("Usage error: input file '{}' must have a .lol extension.", filename);
@@ -705,11 +762,13 @@ fn main() {
     }
 
 
-    //make sure that the source is 100 percent a .lol file and I made it lowerercased so if someone puts in .LOL it will still work thru the llowercasse function
     let source = fs::read_to_string(filename).unwrap_or_else(|err| {
         eprintln!("Error reading file '{}': {}", filename, err);
         std::process::exit(1);
     });
+
+    //some Windows editors put an invisible marker (a BOM) at the start of the file, so I remove it before the lexer sees it
+    let source = source.trim_start_matches('\u{FEFF}').to_string();
 
 
     //here I made the compiler that loads the first token then it parses thru the syntax check then it starts the translation into the html
