@@ -310,7 +310,9 @@ impl LolCompiler {
         }
     }
 
-    
+
+
+    //this is for variable names and link addresses it just makes sure the token is plain text and a single word without spaces and then consumes the token 
     fn expect_word(&mut self, what: &str) {
         if !self.is_text() {
             self.syntax_error(&format!("{} was expected but {} was found.", what, self.found()));
@@ -697,7 +699,7 @@ impl LolCompiler {
     }
 
     //<inner-body> ::= <paragraph> | <comment> | <bold> | <list> | <link> | <newline> | <variable-use> | TEXT
-    //#MAEK starts a paragraph or a list so I peek, and everything else is handled by the parse_simple_item
+    //#MAEK starts a paragraph or a list so I then peek, and everything else is handled by the parse_simple_item
     fn parse_inner_body(&mut self) {
         if self.current_tok == "#MAEK" {
             let next = self.peek_token();
